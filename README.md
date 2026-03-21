@@ -6,8 +6,6 @@
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Platform](https://img.shields.io/badge/platform-Pop!_OS%2024.04-orange.svg)
 
-**🤖 Developed with AI:** This project was created with assistance from [Google Gemini](https://gemini.google.com/) AI.
-
 ---
 
 ## ✨ Features
@@ -135,13 +133,13 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-**AI Development:** This project was developed with assistance from Google Gemini AI.
+
 
 ---
 
 ## 🙏 Acknowledgments
 
-- Developed with [Google Gemini](https://gemini.google.com/) AI assistance
+
 - [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) for the modern UI
 - [mpvpaper](https://github.com/GhostNaN/mpvpaper) for wallpaper rendering
 - Wallpaper Engine community for amazing content
@@ -154,4 +152,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Made with ❤️ and 🤖 AI**
+**Made with ❤️ for Pop!_OS**

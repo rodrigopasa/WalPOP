@@ -21,7 +21,7 @@ Modern Wallpaper Engine manager for Pop!_OS 24.04
 - mpvpaper integration
 - Desktop shortcut installer
 
-Developed with Google Gemini AI assistance"
+"
 
 # Ver lo que se va a subir
 git log --oneline
@@ -30,7 +30,7 @@ git log --oneline
 **Ahora crea el repositorio en GitHub:**
 1. Ve a: https://github.com/new
 2. Nombre: `PopWallpaper`
-3. Descripción: `🎨 Modern GUI for Wallpaper Engine on Pop!_OS (Wayland/COSMIC) - Developed with AI`
+3. Descripción: `🎨 Modern GUI for Wallpaper Engine on Pop!_OS (Wayland/COSMIC)`
 4. **NO marques** "Initialize with README"
 5. Clic en "Create repository"
 
@@ -67,7 +67,7 @@ git status  # Ver qué se agregó
 
 ### 4. Commit
 ```bash
-git commit -m "Initial commit: PopWallpaper - Developed with AI"
+git commit -m "Initial commit: PopWallpaper"
 ```
 
 ### 5. Crear repo en GitHub (manual)
@@ -120,8 +120,7 @@ Agregar en la página del repositorio:
 - `customtkinter`
 - `mpvpaper`
 - `wayland`
-- `ai-assisted`
-- `gemini-ai`
+
 
 ---
 
@@ -140,8 +139,8 @@ Agregar en la página del repositorio:
 
 ## 📝 Archivos preparados para GitHub
 
-✅ **README.md** - Con badges, AI credits, documentación completa  
-✅ **LICENSE** - MIT con reconocimiento de IA  
+✅ **README.md** - Con badges, documentación completa  
+✅ **LICENSE** - MIT  
 ✅ **.gitignore** - Excluye venv, cache, etc.  
 ✅ **GITHUB_SETUP.md** - Guía detallada (este archivo resumido)  
 

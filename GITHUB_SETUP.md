@@ -34,7 +34,7 @@ git commit -m "Initial commit: PopWallpaper - Wallpaper Engine manager for Pop!_
 - Preview image support (JPG, PNG, GIF)
 - mpvpaper integration for persistent wallpapers
 - Desktop shortcut installer
-- Developed with Google Gemini AI assistance"
+"
 ```
 
 ## Paso 5: Crear repositorio en GitHub
@@ -77,13 +77,12 @@ Agrega estos topics en la página del repositorio de GitHub:
 - `customtkinter`
 - `mpvpaper`
 - `wayland`
-- `ai-assisted`
-- `gemini-ai`
+
 
 ### Configuración del README
 GitHub automáticamente mostrará tu README.md mejorado con:
 - Badges
-- Créditos de IA
+
 - Instrucciones de instalación
 - Screenshots (cuando los agregues)
 
@@ -146,7 +145,7 @@ git push
 ## 🎉 ¡Listo!
 
 Tu proyecto está en GitHub con:
-- ✅ Créditos de desarrollo con IA
+
 - ✅ Licencia MIT
 - ✅ README profesional
 - ✅ Documentación completa

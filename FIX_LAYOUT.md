@@ -8,7 +8,7 @@
 3. El texto empuja la imagen fuera de vista
 4. El texto no se lee completo
 
-![Problema Original](file:///home/angel/.gemini/antigravity/brain/eaa200fb-fb37-49bc-8e16-368fd28a0e61/uploaded_media_1770067995617.png)
+
 
 ---
 
