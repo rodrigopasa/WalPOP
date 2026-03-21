@@ -8,12 +8,12 @@ Interface em português brasileiro com customtkinter (tema dark).
 import os
 import sys
 import json
+import time
 import shutil
 import hashlib
 import logging
 import subprocess
 import threading
-import re
 from pathlib import Path
 from tkinter import filedialog, messagebox
 
@@ -67,11 +67,25 @@ def check_command(name):
     """Retorna True se o comando existe no PATH."""
     return shutil.which(name) is not None
 
+
 def truncate_text(text, max_length=40):
     """Trunca texto adicionando '...' se necessário."""
     if len(text) > max_length:
         return text[: max_length - 3] + "..."
     return text
+
+
+def get_script_dir():
+    """Retorna o diretório do script walpop.py."""
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def get_venv_python():
+    """Retorna o caminho do python do venv se existir, senão python3 do sistema."""
+    venv_py = os.path.join(get_script_dir(), "venv", "bin", "python3")
+    if os.path.exists(venv_py):
+        return venv_py
+    return "python3"
 
 # ─── ConfigManager ───────────────────────────────────────────────────────────
 
@@ -145,7 +159,13 @@ class WallpaperScanner:
 
         logging.info("Escaneando Steam Workshop: %s", workshop_path)
 
-        for folder_name in os.listdir(workshop_path):
+        try:
+            entries = os.listdir(workshop_path)
+        except PermissionError as e:
+            logging.error("Sem permissão para ler Steam Workshop: %s", e)
+            return wallpapers
+
+        for folder_name in entries:
             folder_path = os.path.join(workshop_path, folder_name)
             if not os.path.isdir(folder_path):
                 continue
@@ -158,7 +178,7 @@ class WallpaperScanner:
                 with open(project_json, "r", encoding="utf-8") as f:
                     data = json.load(f)
 
-                # Ignorar scene e web
+                # Ignorar scene e web — apenas video
                 wp_type = data.get("type", "").lower()
                 if wp_type in ("scene", "web"):
                     continue
@@ -195,7 +215,7 @@ class WallpaperScanner:
 
     @staticmethod
     def scan_custom(folder_path):
-        """Escaneia todos os vídeos de uma pasta customizada."""
+        """Escaneia todos os vídeos de uma pasta customizada (recursivo 1 nível)."""
         wallpapers = []
 
         if not folder_path or not os.path.isdir(folder_path):
@@ -203,7 +223,13 @@ class WallpaperScanner:
 
         logging.info("Escaneando pasta customizada: %s", folder_path)
 
-        for entry in os.listdir(folder_path):
+        try:
+            entries = os.listdir(folder_path)
+        except PermissionError as e:
+            logging.error("Sem permissão para ler pasta custom: %s", e)
+            return wallpapers
+
+        for entry in entries:
             full_path = os.path.join(folder_path, entry)
             if not os.path.isfile(full_path):
                 continue
@@ -252,25 +278,56 @@ class ThumbnailCache:
         if os.path.exists(thumb_path):
             return thumb_path
 
-        # Gerar thumbnail
+        # Gerar thumbnail — -ss antes de -i é mais rápido (seek no input)
         try:
-            subprocess.run(
+            result = subprocess.run(
                 [
-                    "ffmpeg", "-i", wallpaper.file_path,
-                    "-ss", "00:00:01", "-vframes", "1",
+                    "ffmpeg",
+                    "-ss", "00:00:01",
+                    "-i", wallpaper.file_path,
+                    "-vframes", "1",
+                    "-vf", "scale=160:90",
+                    "-q:v", "8",
                     "-y", thumb_path,
                 ],
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
                 timeout=15,
             )
-            if os.path.exists(thumb_path):
+            if result.returncode == 0 and os.path.exists(thumb_path):
                 logging.info("Thumbnail gerado: %s", thumb_path)
                 return thumb_path
+            else:
+                stderr_msg = result.stderr.decode(errors="replace")[-200:] if result.stderr else ""
+                logging.warning("ffmpeg falhou para thumbnail: %s", stderr_msg)
+        except subprocess.TimeoutExpired:
+            logging.warning("Timeout gerando thumbnail para %s", wallpaper.file_path)
         except Exception as e:
             logging.warning("Falha ao gerar thumbnail para %s: %s", wallpaper.file_path, e)
 
         return None
+
+    @classmethod
+    def generate_missing_async(cls, wallpapers, on_complete=None):
+        """Gera thumbnails faltantes em background thread."""
+
+        def _worker():
+            count = 0
+            for wp in wallpapers:
+                if wp.preview_path and os.path.exists(wp.preview_path):
+                    continue
+                thumb_path = cls.get_thumb_path(wp.file_path)
+                if os.path.exists(thumb_path):
+                    continue
+                cls.get_or_create(wp)
+                count += 1
+            logging.info("Thumbnails gerados em background: %d", count)
+            if on_complete:
+                on_complete(count)
+
+        thread = threading.Thread(target=_worker, daemon=True)
+        thread.start()
+        return thread
 
 # ─── WallpaperManager ────────────────────────────────────────────────────────
 
@@ -280,25 +337,40 @@ class WallpaperManager:
     HAS_MPVPAPER = check_command("mpvpaper")
 
     @classmethod
+    def kill_existing(cls):
+        """Mata todas as instâncias do mpvpaper."""
+        try:
+            subprocess.run(
+                ["pkill", "-f", "mpvpaper"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            time.sleep(0.4)
+        except Exception as e:
+            logging.warning("Erro ao matar mpvpaper: %s", e)
+
+    @classmethod
     def apply(cls, video_path, fps=30):
         """Mata mpvpaper anterior e aplica novo wallpaper."""
         if not cls.HAS_MPVPAPER:
             logging.error("mpvpaper não está instalado.")
             return False
 
-        try:
-            subprocess.run(["pkill", "mpvpaper"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            import time
-            time.sleep(0.3)
+        if not os.path.exists(video_path):
+            logging.error("Arquivo de vídeo não encontrado: %s", video_path)
+            return False
 
-            cmd = [
-                "mpvpaper",
-                "-o", f"loop --vf=fps={fps}",
-                "*",
-                video_path,
-            ]
+        try:
+            cls.kill_existing()
+
+            # mpvpaper: '*' seleciona todos os monitores
+            # Usar shell=True para garantir que o '*' seja interpretado corretamente
+            escaped_path = video_path.replace("'", "'\\''")
+            shell_cmd = f"mpvpaper -o 'loop --vf=fps={fps}' '*' '{escaped_path}'"
+
             subprocess.Popen(
-                cmd,
+                shell_cmd,
+                shell=True,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
@@ -310,6 +382,19 @@ class WallpaperManager:
             logging.error("Erro ao aplicar wallpaper: %s", e)
             return False
 
+    @classmethod
+    def is_running(cls):
+        """Verifica se um processo mpvpaper está ativo."""
+        try:
+            result = subprocess.run(
+                ["pgrep", "-f", "mpvpaper"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return result.returncode == 0
+        except Exception:
+            return False
+
 # ─── VideoOptimizer ──────────────────────────────────────────────────────────
 
 class VideoOptimizer:
@@ -317,45 +402,68 @@ class VideoOptimizer:
 
     HAS_FFMPEG = check_command("ffmpeg")
 
+    @staticmethod
+    def _get_duration(input_path):
+        """Retorna a duração do vídeo em segundos, ou 0 se falhar."""
+        try:
+            probe = subprocess.run(
+                [
+                    "ffprobe", "-v", "error",
+                    "-show_entries", "format=duration",
+                    "-of", "default=noprint_wrappers=1:nokey=1",
+                    input_path,
+                ],
+                capture_output=True, text=True, timeout=10,
+            )
+            if probe.returncode == 0 and probe.stdout.strip():
+                return float(probe.stdout.strip())
+        except Exception as e:
+            logging.warning("ffprobe falhou para %s: %s", input_path, e)
+        return 0
+
     @classmethod
     def optimize(cls, input_path, output_path, progress_callback=None, done_callback=None):
-        """Roda otimização em thread separada. Callbacks executados na thread."""
+        """Roda otimização em thread separada."""
 
         def _run():
             try:
-                # Pegar duração total para calcular progresso
-                probe = subprocess.run(
-                    [
-                        "ffprobe", "-v", "error",
-                        "-show_entries", "format=duration",
-                        "-of", "default=noprint_wrappers=1:nokey=1",
-                        input_path,
-                    ],
-                    capture_output=True, text=True, timeout=10,
-                )
-                total_duration = float(probe.stdout.strip()) if probe.stdout.strip() else 0
+                total_duration = cls._get_duration(input_path)
 
                 cmd = [
                     "ffmpeg", "-i", input_path,
-                    "-vf", "scale=1280:720",
+                    "-vf", "scale=1280:720:force_original_aspect_ratio=decrease",
                     "-c:v", "libx264",
+                    "-preset", "medium",
                     "-crf", "28",
                     "-an",
+                    "-movflags", "+faststart",
                     "-progress", "pipe:1",
+                    "-nostats",
                     "-y", output_path,
                 ]
 
                 process = subprocess.Popen(
                     cmd,
                     stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
                     text=True,
                 )
 
                 for line in process.stdout:
-                    if line.startswith("out_time_ms="):
+                    line = line.strip()
+                    # Tentar out_time_us (mais novo) e out_time_ms (fallback)
+                    if line.startswith("out_time_us="):
                         try:
-                            time_ms = int(line.split("=")[1].strip())
+                            time_us = int(line.split("=")[1])
+                            time_s = time_us / 1_000_000
+                            if total_duration > 0 and progress_callback:
+                                pct = min(time_s / total_duration, 1.0)
+                                progress_callback(pct)
+                        except (ValueError, IndexError):
+                            pass
+                    elif line.startswith("out_time_ms="):
+                        try:
+                            time_ms = int(line.split("=")[1])
                             time_s = time_ms / 1_000_000
                             if total_duration > 0 and progress_callback:
                                 pct = min(time_s / total_duration, 1.0)
@@ -366,11 +474,24 @@ class VideoOptimizer:
                 process.wait()
 
                 if process.returncode == 0:
-                    logging.info("Vídeo otimizado: %s", output_path)
-                    if done_callback:
-                        done_callback(True)
+                    # Verificar se o output foi realmente criado
+                    if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                        logging.info("Vídeo otimizado: %s", output_path)
+                        if done_callback:
+                            done_callback(True)
+                    else:
+                        logging.error("ffmpeg finalizou mas output vazio/inexistente")
+                        if done_callback:
+                            done_callback(False)
                 else:
-                    logging.error("ffmpeg retornou código %d", process.returncode)
+                    stderr_out = process.stderr.read() if process.stderr else ""
+                    logging.error("ffmpeg retornou código %d: %s", process.returncode, stderr_out[-500:])
+                    # Limpar arquivo parcial
+                    if os.path.exists(output_path):
+                        try:
+                            os.remove(output_path)
+                        except OSError:
+                            pass
                     if done_callback:
                         done_callback(False)
 
@@ -390,13 +511,14 @@ class AutostartManager:
 
     @staticmethod
     def enable():
-        """Cria arquivo de autostart."""
+        """Cria arquivo de autostart usando o python do venv se disponível."""
         os.makedirs(AUTOSTART_DIR, exist_ok=True)
         script_path = os.path.abspath(__file__)
+        python_path = get_venv_python()
         content = f"""[Desktop Entry]
 Type=Application
 Name=Walpop
-Exec=python3 {script_path} --autostart
+Exec={python_path} {script_path} --autostart
 Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
@@ -418,18 +540,25 @@ X-GNOME-Autostart-enabled=true
         except IOError as e:
             logging.error("Falha ao remover autostart: %s", e)
 
+    @staticmethod
+    def is_enabled():
+        """Verifica se o autostart está realmente ativo."""
+        return os.path.exists(AUTOSTART_FILE)
+
 # ─── UI Principal ─────────────────────────────────────────────────────────────
 
 class WalpopApp(ctk.CTk):
     """Interface gráfica principal do Walpop."""
 
-    THUMB_SIZE = (80, 45)  # 16:9 ish
+    THUMB_SIZE = (80, 45)  # 16:9
 
     def __init__(self, config: ConfigManager):
         super().__init__()
         self.config = config
         self.wallpapers = []
         self.thumb_refs = []  # Manter referências para GC
+        self._is_scanning = False
+        self._is_optimizing = False
 
         # Janela
         self.title(f"🎬 {APP_NAME}")
@@ -446,7 +575,7 @@ class WalpopApp(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         # Carregar wallpapers na inicialização
-        self.after(200, self._refresh_list)
+        self.after(300, self._refresh_list)
 
     # ── Build UI ──────────────────────────────────────────────────────────
 
@@ -475,6 +604,7 @@ class WalpopApp(ctk.CTk):
         ).grid(row=0, column=1, sticky="e")
 
         # ── Avisos de dependência ────────────────────────────────────────
+        warning_row = 1
         if not self.has_mpvpaper:
             warn = ctk.CTkLabel(
                 self,
@@ -581,8 +711,12 @@ class WalpopApp(ctk.CTk):
             text_color="gray",
         ).grid(row=1, column=0, columnspan=3, sticky="w")
 
-        # Autostart toggle
-        self.autostart_var = ctk.BooleanVar(value=self.config.get("autostart", False))
+        # Autostart toggle — sincronizar com estado real
+        actual_autostart = AutostartManager.is_enabled()
+        if actual_autostart != self.config.get("autostart", False):
+            self.config.set("autostart", actual_autostart)
+
+        self.autostart_var = ctk.BooleanVar(value=actual_autostart)
         self.autostart_switch = ctk.CTkSwitch(
             controls,
             text="Iniciar com o sistema",
@@ -593,12 +727,13 @@ class WalpopApp(ctk.CTk):
         self.autostart_switch.grid(row=1, column=0, sticky="w", pady=(4, 0))
 
         # Botão atualizar
-        ctk.CTkButton(
+        self.refresh_btn = ctk.CTkButton(
             controls,
             text="🔄 Atualizar lista",
             command=self._refresh_list,
             width=140,
-        ).grid(row=1, column=2, sticky="e", pady=(4, 0))
+        )
+        self.refresh_btn.grid(row=1, column=2, sticky="e", pady=(4, 0))
 
         # Status bar
         self.status_label = ctk.CTkLabel(
@@ -619,6 +754,7 @@ class WalpopApp(ctk.CTk):
 
     def _get_current_fps(self):
         idx = int(round(self.fps_slider.get()))
+        idx = max(0, min(idx, len(FPS_VALUES) - 1))
         return FPS_VALUES[idx]
 
     def _on_fps_change(self, value):
@@ -631,8 +767,10 @@ class WalpopApp(ctk.CTk):
         self.config.set("autostart", enabled)
         if enabled:
             AutostartManager.enable()
+            self._set_status("✅ Autostart ativado")
         else:
             AutostartManager.disable()
+            self._set_status("Autostart desativado")
 
     def _set_status(self, text):
         self.status_label.configure(text=text)
@@ -640,8 +778,30 @@ class WalpopApp(ctk.CTk):
     # ── Lista de wallpapers ──────────────────────────────────────────────
 
     def _refresh_list(self):
+        """Escaneia wallpapers em background thread para não travar a UI."""
+        if self._is_scanning:
+            return
+
+        self._is_scanning = True
+        self.refresh_btn.configure(state="disabled")
         self._set_status("Escaneando wallpapers...")
         self.update()
+
+        custom_folder = self.custom_entry.get().strip()
+        if custom_folder:
+            self.config.set("custom_folder", custom_folder)
+
+        def _scan_worker():
+            wallpapers = WallpaperScanner.scan_all(custom_folder)
+            self.after(0, lambda: self._on_scan_complete(wallpapers))
+
+        thread = threading.Thread(target=_scan_worker, daemon=True)
+        thread.start()
+
+    def _on_scan_complete(self, wallpapers):
+        """Callback na main thread após scan terminar."""
+        self._is_scanning = False
+        self.refresh_btn.configure(state="normal")
 
         # Limpar lista
         for child in self.list_frame.winfo_children():
@@ -649,11 +809,7 @@ class WalpopApp(ctk.CTk):
                 child.destroy()
         self.thumb_refs.clear()
 
-        custom_folder = self.custom_entry.get().strip()
-        if custom_folder:
-            self.config.set("custom_folder", custom_folder)
-
-        self.wallpapers = WallpaperScanner.scan_all(custom_folder)
+        self.wallpapers = wallpapers
 
         if not self.wallpapers:
             self.empty_label.grid(row=0, column=0, columnspan=4, pady=40)
@@ -666,6 +822,31 @@ class WalpopApp(ctk.CTk):
             self._add_wallpaper_row(i, wp)
 
         self._set_status(f"{len(self.wallpapers)} wallpapers encontrados")
+
+        # Gerar thumbnails faltantes em background e recarregar depois
+        missing = [wp for wp in self.wallpapers
+                   if not wp.preview_path and not os.path.exists(ThumbnailCache.get_thumb_path(wp.file_path))]
+        if missing and self.has_ffmpeg:
+            def _on_thumbs_done(count):
+                if count > 0:
+                    self.after(0, self._reload_thumbnails)
+
+            ThumbnailCache.generate_missing_async(missing, _on_thumbs_done)
+
+    def _reload_thumbnails(self):
+        """Recarrega a lista após geração de thumbnails em background."""
+        if not self._is_scanning:
+            self._set_status("Atualizando thumbnails...")
+            # Recarregar sem re-escanear
+            for child in self.list_frame.winfo_children():
+                if child != self.empty_label:
+                    child.destroy()
+            self.thumb_refs.clear()
+
+            for i, wp in enumerate(self.wallpapers):
+                self._add_wallpaper_row(i, wp)
+
+            self._set_status(f"{len(self.wallpapers)} wallpapers encontrados")
 
     def _add_wallpaper_row(self, row_idx, wp):
         """Adiciona uma linha na lista para um wallpaper."""
@@ -699,13 +880,20 @@ class WalpopApp(ctk.CTk):
         )
         tag_label.grid(row=1, column=1, sticky="w", pady=(0, 8))
 
+        # Indicar wallpaper ativo
+        is_active = self.config.get("last_wallpaper", "") == wp.file_path
+
         # Botões
         btn_frame = ctk.CTkFrame(row_frame, fg_color="transparent")
         btn_frame.grid(row=0, column=2, rowspan=2, padx=(4, 8), pady=6)
 
+        apply_text = "✓ Ativo" if is_active else "Aplicar"
+        apply_color = "#38a169" if is_active else "#4299e1"
+        apply_hover = "#2f855a" if is_active else "#3182ce"
+
         apply_btn = ctk.CTkButton(
-            btn_frame, text="Aplicar", width=80, height=28,
-            fg_color="#4299e1", hover_color="#3182ce",
+            btn_frame, text=apply_text, width=80, height=28,
+            fg_color=apply_color, hover_color=apply_hover,
             command=lambda w=wp: self._apply_wallpaper(w),
             state="normal" if self.has_mpvpaper else "disabled",
         )
@@ -715,15 +903,23 @@ class WalpopApp(ctk.CTk):
             btn_frame, text="Otimizar", width=80, height=28,
             fg_color="#805ad5", hover_color="#6b46c1",
             command=lambda w=wp: self._optimize_wallpaper(w),
-            state="normal" if self.has_ffmpeg else "disabled",
+            state="normal" if (self.has_ffmpeg and not self._is_optimizing) else "disabled",
         )
         opt_btn.pack(side="left")
 
     def _load_thumbnail(self, wp):
-        """Carrega ou gera thumbnail para um wallpaper."""
-        thumb_path = ThumbnailCache.get_or_create(wp)
+        """Carrega thumbnail para um wallpaper (do cache se existir)."""
+        thumb_path = None
 
-        if thumb_path and os.path.exists(thumb_path):
+        # Prioridade: preview do Steam > cache gerado
+        if wp.preview_path and os.path.exists(wp.preview_path):
+            thumb_path = wp.preview_path
+        else:
+            cached = ThumbnailCache.get_thumb_path(wp.file_path)
+            if os.path.exists(cached):
+                thumb_path = cached
+
+        if thumb_path:
             try:
                 img = Image.open(thumb_path)
                 if hasattr(img, "format") and img.format == "GIF":
@@ -736,7 +932,7 @@ class WalpopApp(ctk.CTk):
             except Exception as e:
                 logging.warning("Erro ao carregar thumbnail: %s", e)
 
-        # Placeholder
+        # Placeholder cinza
         placeholder = Image.new("RGB", self.THUMB_SIZE, color=(45, 45, 50))
         ctk_img = ctk.CTkImage(light_image=placeholder, dark_image=placeholder, size=self.THUMB_SIZE)
         self.thumb_refs.append(ctk_img)
@@ -746,10 +942,15 @@ class WalpopApp(ctk.CTk):
 
     def _apply_wallpaper(self, wp):
         fps = self._get_current_fps()
+        self._set_status(f"Aplicando: {wp.title}...")
+        self.update()
+
         success = WallpaperManager.apply(wp.file_path, fps)
         if success:
             self.config.set("last_wallpaper", wp.file_path)
             self._set_status(f"✅ Aplicado: {wp.title} ({fps} fps)")
+            # Recarregar lista para atualizar indicador de ativo
+            self._reload_thumbnails()
         else:
             if not self.has_mpvpaper:
                 messagebox.showerror(
@@ -771,6 +972,10 @@ class WalpopApp(ctk.CTk):
             )
             return
 
+        if self._is_optimizing:
+            messagebox.showinfo("Aguarde", "Já existe uma otimização em andamento.")
+            return
+
         # Diálogo para salvar
         base_name = os.path.splitext(os.path.basename(wp.file_path))[0]
         output_path = filedialog.asksaveasfilename(
@@ -781,6 +986,9 @@ class WalpopApp(ctk.CTk):
         )
         if not output_path:
             return
+
+        # Bloquear nova otimização
+        self._is_optimizing = True
 
         # Mostrar barra de progresso
         self.progress_frame.grid()
@@ -795,6 +1003,7 @@ class WalpopApp(ctk.CTk):
 
         def on_done(success):
             def _finish():
+                self._is_optimizing = False
                 self.progress_frame.grid_remove()
                 if success:
                     self._set_status(f"✅ Otimizado: {os.path.basename(output_path)}")
@@ -820,12 +1029,23 @@ def run_autostart(config):
     last_wp = config.get("last_wallpaper", "")
     fps = config.get("fps", 30)
 
-    if not last_wp or not os.path.exists(last_wp):
-        logging.info("Autostart: nenhum wallpaper salvo ou arquivo não encontrado.")
+    if not last_wp:
+        logging.info("Autostart: nenhum wallpaper configurado.")
         return
 
+    if not os.path.exists(last_wp):
+        logging.warning("Autostart: arquivo não encontrado: %s", last_wp)
+        return
+
+    # Esperar um pouco o compositor Wayland estar pronto
+    time.sleep(2)
+
     logging.info("Autostart: aplicando %s (%d fps)", last_wp, fps)
-    WallpaperManager.apply(last_wp, fps)
+    success = WallpaperManager.apply(last_wp, fps)
+    if success:
+        logging.info("Autostart: wallpaper aplicado com sucesso.")
+    else:
+        logging.error("Autostart: falha ao aplicar wallpaper.")
 
 # ─── Main ────────────────────────────────────────────────────────────────────
 
