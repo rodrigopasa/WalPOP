@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=PopWallpaper
+Comment=Manage and apply animated wallpapers from Wallpaper Engine
+Exec=/home/angel/Documents/PopWallpaper/run.sh
+Icon=preferences-desktop-wallpaper
+Terminal=false
+Categories=Utility;Settings;DesktopSettings;
+Keywords=wallpaper;background;video;animated;
+StartupNotify=true

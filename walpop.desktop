@@ -1,0 +1,12 @@
+[Desktop Entry]
+Version=2.0
+Type=Application
+Name=Walpop
+GenericName=Gerenciador de Wallpapers Animados
+Comment=Gerencie e aplique wallpapers animados com mpvpaper
+Exec=python3 /caminho/completo/walpop.py
+Icon=preferences-desktop-wallpaper
+Terminal=false
+Categories=Utility;Settings;DesktopSettings;
+Keywords=wallpaper;fundo;video;animado;mpvpaper;
+StartupNotify=true

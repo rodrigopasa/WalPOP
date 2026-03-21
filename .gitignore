@@ -1,0 +1,29 @@
+# Python
+venv/
+__pycache__/
+*.py[cod]
+*.user
+*$py.class
+*.so
+.Python
+env/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+icons/downloaded_*
+*.desktop.backup
+
+# Logs and temp files
+*.log
+*.tmp
