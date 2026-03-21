@@ -1,155 +1,173 @@
-# PopWallpaper
+# 🎬 Walpop
 
-> 🎨 A modern GUI application for managing and applying animated wallpapers from Wallpaper Engine on Pop!_OS 24.04 (COSMIC/Wayland)
+> Animated wallpaper manager for Pop!_OS 24.04 (COSMIC / Wayland)
 
-![Python](https://img.shields.io/badge/python-3.8+-blue.svg)
+![Python](https://img.shields.io/badge/python-3.10+-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Platform](https://img.shields.io/badge/platform-Pop!_OS%2024.04-orange.svg)
+![Desktop](https://img.shields.io/badge/session-Wayland-blueviolet.svg)
+
+Walpop scans your **Steam Workshop** wallpapers and any **custom folder** you choose, then applies video wallpapers to your desktop through [mpvpaper](https://github.com/GhostNaN/mpvpaper). It features a modern dark UI built with [customtkinter](https://github.com/TomSchimansky/CustomTkinter), persistent configuration, FPS control, video optimization, and autostart support.
 
 ---
 
 ## ✨ Features
 
-- 🎨 Modern dark UI using customtkinter
-- 📁 Automatic scanning of Steam Workshop wallpapers
-- 🎬 Support for video wallpapers (.mp4, .webm)
-- 🖼️ Preview images (JPG, PNG, GIF) with automatic format detection
-- 🔄 Easy wallpaper switching with thumbnail previews
-- ⚡ Persistent wallpapers via mpvpaper integration
-- 🚀 Independent background process (survives app closure)
-- 📝 Smart text handling for long wallpaper names
+| Feature | Description |
+|---|---|
+| 🎮 **Steam Workshop** | Automatically scans Wallpaper Engine folders, reads `project.json`, and filters video-type wallpapers |
+| 📁 **Custom Folder** | Point to any directory — all `.mp4`, `.webm`, `.mkv` files are picked up |
+| 📋 **Unified List** | All wallpapers displayed in a single scrollable list with thumbnails and `[Steam]` / `[Custom]` tags |
+| 🖼️ **Thumbnail Cache** | Auto-generates thumbnails via `ffmpeg` and caches them in `~/.config/walpop/thumbs/` |
+| 🎯 **FPS Control** | Slider with discrete values (10 / 15 / 24 / 30 / 60) — lower FPS = lower CPU usage |
+| ⚡ **Video Optimization** | One-click optimization via `ffmpeg` — scales to 720p, removes audio, compresses with CRF 28 |
+| 🚀 **Autostart** | Toggle to launch Walpop on boot and automatically apply the last used wallpaper (no UI) |
+| 💾 **Persistent Config** | All settings saved to `~/.config/walpop/config.json` — survives restarts |
+| 🌙 **Dark Theme** | Modern dark UI in Brazilian Portuguese |
+| 📝 **Error Logging** | All errors logged to `~/.config/walpop/walpop.log` |
 
 ---
 
 ## 📋 Requirements
 
-- Python 3.8+
-- mpvpaper (for applying wallpapers)
-- Steam with Wallpaper Engine workshop content
-- Pop!_OS 24.04 with Wayland/COSMIC
+- **Pop!_OS 24.04** with Wayland / COSMIC
+- **Python 3.10+**
+- **mpvpaper** — renders the animated wallpaper on the desktop
+- **ffmpeg** — generates thumbnails and optimizes videos
 
 ---
 
 ## 🚀 Installation
 
-### 1. Install mpvpaper
 ```bash
-sudo apt install mpvpaper
+git clone https://github.com/rodrigopasa/WalPOP.git
+cd WalPOP
+chmod +x install.sh
+bash install.sh
 ```
 
-### 2. Clone the repository
+The install script will:
+1. Install system dependencies (`mpv`, `mpvpaper`, `ffmpeg`, `python3-pip`, `python3-venv`)
+2. Create a Python virtual environment and install `customtkinter` + `Pillow`
+3. Add a **Walpop** shortcut to your applications menu
+
+---
+
+## ▶️ Usage
+
+### Launch the app
 ```bash
-git clone https://github.com/YOUR_USERNAME/PopWallpaper.git
-cd PopWallpaper
+source venv/bin/activate
+python3 walpop.py
 ```
+Or search for **Walpop** in your applications menu after installation.
 
-### 3. Install Desktop Shortcut (Recommended)
+### Apply a wallpaper
+1. Browse the wallpaper list (Steam Workshop items are detected automatically)
+2. Optionally set a **custom folder** using the folder picker at the top
+3. Adjust the **FPS slider** to your preference
+4. Click **Aplicar** on any wallpaper
+
+The wallpaper runs as an independent `mpvpaper` process — **closing the app does NOT stop the wallpaper**.
+
+### Optimize a video
+Click **Otimizar** on any wallpaper to create a lighter version:
+- Scales down to **1280×720**
+- Removes audio track
+- Compresses with `libx264` CRF 28
+- Progress bar shown during encoding
+
+### Autostart
+Enable **"Iniciar com o sistema"** to automatically apply the last wallpaper on boot without opening the UI.
+
 ```bash
-python3 install_shortcut.py
-```
-
-This will:
-- Create a `.desktop` file in your applications menu
-- Download an icon for the app
-- Configure proper launch paths
-- Make PopWallpaper accessible from your app launcher
-
-### 4. Quick Run (Without Installation)
-```bash
-./run.sh
+# This is what happens under the hood:
+python3 walpop.py --autostart
 ```
 
 ---
 
-## 📖 How It Works
+## 📂 Project Structure
 
-1. Scans your Steam Workshop directory for Wallpaper Engine content
-2. Parses `project.json` files to find video wallpapers
-3. Filters out non-video types (scenes, web)
-4. Displays wallpapers with preview images (supports JPG, PNG, GIF)
-5. Applies animated backgrounds using `mpvpaper`
-6. Manages processes independently for persistence
+```
+WalPOP/
+├── walpop.py              # Main application (UI + logic)
+├── requirements.txt       # Python dependencies
+├── install.sh             # One-command installer
+├── walpop.desktop         # Desktop entry template
+└── assets/
+    └── icon.png           # Application icon
+```
 
-### Directory Structure
+### Config files (created at runtime)
+
+```
+~/.config/walpop/
+├── config.json            # Settings (FPS, custom folder, last wallpaper, autostart)
+├── walpop.log             # Error and info logs
+└── thumbs/                # Cached thumbnail images
+```
+
+---
+
+## ⚙️ Configuration
+
+The config file (`~/.config/walpop/config.json`) is managed automatically:
+
+```json
+{
+  "fps": 30,
+  "custom_folder": "/home/user/Wallpapers",
+  "last_wallpaper": "/path/to/video.mp4",
+  "autostart": false
+}
+```
+
+---
+
+## 🎮 Steam Workshop Paths
+
+Walpop scans the following directories for Wallpaper Engine content:
+
 ```
 ~/.local/share/Steam/steamapps/workshop/content/431960/
-├── [workshop_id_1]/
-│   ├── project.json
-│   ├── preview.jpg (or .png, .gif)
-│   └── scene.mp4
-└── [workshop_id_2]/
-    ├── project.json
-    ├── preview.png
-    └── video.webm
+~/.steam/debian-installation/steamapps/workshop/content/431960/
 ```
+
+For each subfolder, it reads `project.json` and:
+- ✅ Includes wallpapers with video type (`.mp4`, `.webm`)
+- ❌ Skips `scene` and `web` type wallpapers
+- 🖼️ Uses `preview.jpg` / `preview.png` as thumbnail when available
 
 ---
 
 ## 🛠️ Troubleshooting
 
-**No wallpapers found:**
-- Ensure Steam is installed
-- Subscribe to Wallpaper Engine wallpapers in Workshop
-- Check workshop path: `~/.local/share/Steam/steamapps/workshop/content/431960`
-
-**mpvpaper not found:**
-```bash
-sudo apt install mpvpaper
-```
-
-**Wallpaper not applying:**
-- Ensure you're running Wayland (required for mpvpaper)
-- Check mpvpaper is working: `mpvpaper --help`
-
----
-
-## 📁 Project Structure
-
-```
-PopWallpaper/
-├── popwallpaper.py        # Main application
-├── install_shortcut.py    # Desktop shortcut installer
-├── lanzador.sh           # Background launcher script
-├── run.sh                # Main launcher
-├── requirements.txt      # Python dependencies
-├── README.md            # This file
-├── LICENSE              # MIT License
-└── docs/                # Documentation
-    ├── CAMBIOS.md       # Spanish changelog
-    ├── CORRECCIONES.md  # Bug fixes documentation
-    ├── FIX_PREVIEW.md   # Preview image fixes
-    └── FIX_LAYOUT.md    # Layout fixes
-```
+| Problem | Solution |
+|---|---|
+| **"mpvpaper não encontrado"** | `sudo apt install mpvpaper` |
+| **"ffmpeg não encontrado"** | `sudo apt install ffmpeg` |
+| **No wallpapers found** | Make sure Steam is installed with Wallpaper Engine subscriptions, or set a custom folder |
+| **Wallpaper not applying** | Verify you're on a Wayland session: `echo $XDG_SESSION_TYPE` |
+| **App won't start** | Check the log: `cat ~/.config/walpop/walpop.log` |
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome! Feel free to open issues or submit pull requests.
 
 ---
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
 
 ---
 
 ## 🙏 Acknowledgments
 
-
-- [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) for the modern UI
-- [mpvpaper](https://github.com/GhostNaN/mpvpaper) for wallpaper rendering
+- [customtkinter](https://github.com/TomSchimansky/CustomTkinter) — Modern dark UI framework
+- [mpvpaper](https://github.com/GhostNaN/mpvpaper) — Wayland wallpaper renderer
+- [ffmpeg](https://ffmpeg.org/) — Video processing
 - Wallpaper Engine community for amazing content
-
----
-
-## 📸 Screenshots
-
-> Add your screenshots here!
-
----
-
-**Made with ❤️ for Pop!_OS**
