@@ -14,9 +14,12 @@ if [ -d "venv" ]; then
     source venv/bin/activate
 fi
 
-# Instalar o PyInstaller se não estiver instalado
-echo "📥 Verificando PyInstaller..."
+# Instalar o PyInstaller e dependências
+echo "📥 Instalando dependências e bibliotecas Python..."
 pip install pyinstaller -q
+if [ -f "requirements.txt" ]; then
+    pip install -r requirements.txt -q
+fi
 
 echo "🔨 Compilando com PyInstaller (Isso pode levar um minuto)..."
 # --noconsole / --windowed : Oculta o terminal no executável

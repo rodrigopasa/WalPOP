@@ -19,6 +19,11 @@ Walpop scans your **Steam Workshop** wallpapers and any **custom folder** you ch
 | 📁 **Custom Folder** | Point to any directory — all `.mp4`, `.webm`, `.mkv` files are picked up |
 | 📋 **Unified List** | All wallpapers displayed in a single scrollable list with thumbnails and `[Steam]` / `[Custom]` tags |
 | 🖼️ **Thumbnail Cache** | Auto-generates thumbnails via `ffmpeg` and caches them in `~/.config/walpop/thumbs/` |
+| 🔍 **Search & Favorites** | Built-in search bar and favorites system (⭐) to quickly find and save wallpapers |
+| 🖥️ **Multi-monitor Setup** | Specify exact monitors (e.g., `eDP-1`) or apply to all (`*`) seamlessly |
+| ⏸️ **Smart Pause (Battery)** | Automatically freezes the wallpaper when your laptop unplugs to save battery |
+| 🔀 **Auto-Shuffle** | Automatically rotates your favorite wallpapers at configurable intervals |
+| 🎈 **System Tray Icon** | Lives in your taskbar for quick playback controls without opening the main window |
 | 🎯 **FPS Control** | Slider with discrete values (10 / 15 / 24 / 30 / 60) — lower FPS = lower CPU usage |
 | ⏩ **Speed Control** | Slider to control the playback speed (0.25x to 2.0x) |
 | ⚡ **Video Optimization** | One-click optimization via `ffmpeg` — scales to 720p, removes audio, compresses with CRF 28 |

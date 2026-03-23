@@ -16,7 +16,10 @@ import subprocess
 import threading
 from pathlib import Path
 from tkinter import filedialog, messagebox
+import random
 
+import psutil
+import pystray
 import customtkinter as ctk
 from PIL import Image
 
@@ -37,6 +40,7 @@ STEAM_WORKSHOP_PATHS = [
 VIDEO_EXTENSIONS = {".mp4", ".webm", ".mkv"}
 FPS_VALUES = [10, 15, 24, 30, 60]
 SPEED_VALUES = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
+SHUFFLE_VALUES = {"Desativado": 0, "5 Min": 5, "15 Min": 15, "1 Hora": 60, "1 Dia": 1440}
 
 DEFAULT_CONFIG = {
     "fps": 30,
@@ -44,6 +48,10 @@ DEFAULT_CONFIG = {
     "custom_folder": "",
     "last_wallpaper": "",
     "autostart": False,
+    "favorites": [],
+    "monitor": "*",
+    "shuffle_interval": 0,
+    "smart_pause_battery": False,
 }
 
 AUTOSTART_DIR = os.path.expanduser("~/.config/autostart")
@@ -130,6 +138,139 @@ class ConfigManager:
     def set(self, key, value):
         self.data[key] = value
         self.save()
+
+# ─── Managers de Background (Automação) ──────────────────────────────────────
+
+class SmartPauseManager:
+    """Pausa mpvpaper automaticamente quando na bateria."""
+    _thread = None
+    _stop_event = threading.Event()
+    _is_paused = False
+    
+    @classmethod
+    def set_paused(cls, pause):
+        if pause == cls._is_paused:
+            return
+        cls._is_paused = pause
+        try:
+            cmd = ["pkill", "-STOP" if pause else "-CONT", "-f", "mpvpaper"]
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            logging.info("🔋 SmartPause: %s mpvpaper (%s)", "Pausado" if pause else "Retomado", "Bateria" if pause else "Tomada")
+        except Exception as e:
+            logging.warning("Erro enviar sinal de pausa: %s", e)
+
+    @classmethod
+    def start(cls, config: ConfigManager):
+        if not config.get("smart_pause_battery", False):
+            cls.stop()
+            if cls._is_paused:
+                cls.set_paused(False)
+            return
+            
+        cls._stop_event.clear()
+        if cls._thread and cls._thread.is_alive():
+            return
+            
+        def _run():
+            while not cls._stop_event.is_set():
+                if hasattr(psutil, "sensors_battery"):
+                    batt = psutil.sensors_battery()
+                    if batt:
+                        cls.set_paused(not batt.power_plugged)
+                time.sleep(15)
+                
+        cls._thread = threading.Thread(target=_run, daemon=True)
+        cls._thread.start()
+        
+    @classmethod
+    def stop(cls):
+        cls._stop_event.set()
+
+
+class ShuffleManager:
+    """Muda os wallpapers baseado no intervalo estipulado e favoritos."""
+    _thread = None
+    _stop_event = threading.Event()
+    
+    @classmethod
+    def start(cls, config: ConfigManager, app_ref):
+        interval_min = config.get("shuffle_interval", 0)
+        if interval_min <= 0:
+            cls.stop()
+            return
+            
+        cls._stop_event.clear()
+        if cls._thread and cls._thread.is_alive():
+            return
+            
+        def _run():
+            while not cls._stop_event.is_set():
+                for _ in range(int(interval_min * 60)):
+                    if cls._stop_event.is_set():
+                        return
+                    time.sleep(1)
+                
+                # Executa o shuffle
+                if app_ref.wallpapers:
+                    fav_paths = config.get("favorites", [])
+                    favs = [wp for wp in app_ref.wallpapers if wp.file_path in fav_paths]
+                    pool = favs if favs else app_ref.wallpapers
+                    if pool:
+                        wp = random.choice(pool)
+                        app_ref.after(0, lambda w=wp: app_ref._apply_wallpaper(w, is_shuffle=True))
+                        
+        cls._thread = threading.Thread(target=_run, daemon=True)
+        cls._thread.start()
+        
+    @classmethod
+    def stop(cls):
+        cls._stop_event.set()
+
+
+class SystemTray:
+    """Ícone na bandeja do sistema."""
+    _icon = None
+    
+    @classmethod
+    def run(cls, app_ref):
+        if cls._icon:
+            return
+        
+        img = Image.new('RGB', (64, 64), color=(66, 153, 225))
+        try:
+            icon_path = os.path.join(get_script_dir(), "assets", "icon.png")
+            if os.path.exists(icon_path):
+                img = Image.open(icon_path)
+        except Exception:
+            pass
+
+        def _on_show():
+            app_ref.after(0, app_ref.deiconify)
+            
+        def _on_next():
+            if app_ref.wallpapers:
+                fav_paths = app_ref.config.get("favorites", [])
+                pool = [wp for wp in app_ref.wallpapers if wp.file_path in fav_paths] or app_ref.wallpapers
+                if pool:
+                    wp = random.choice(pool)
+                    app_ref.after(0, lambda w=wp: app_ref._apply_wallpaper(w, is_shuffle=True))
+
+        def _on_stop():
+            app_ref.after(0, app_ref._on_close_full)
+
+        menu = pystray.Menu(
+            pystray.MenuItem("Abrir Interface...", _on_show, default=True),
+            pystray.MenuItem("Próximo Aleatório", _on_next),
+            pystray.MenuItem("Sair Totalmente", _on_stop)
+        )
+        
+        cls._icon = pystray.Icon("Walpop", img, "Walpop", menu)
+        threading.Thread(target=cls._icon.run, daemon=True).start()
+        
+    @classmethod
+    def stop(cls):
+        if cls._icon:
+            cls._icon.stop()
 
 # ─── Wallpaper (model) ───────────────────────────────────────────────────────
 
@@ -359,7 +500,7 @@ class WallpaperManager:
             logging.warning("Erro ao matar mpvpaper: %s", e)
 
     @classmethod
-    def apply(cls, video_path, fps=30, speed=1.0):
+    def apply(cls, video_path, fps=30, speed=1.0, monitor="*"):
         """Mata mpvpaper anterior e aplica novo wallpaper."""
         if not cls.HAS_MPVPAPER:
             logging.error("mpvpaper não está instalado.")
@@ -372,10 +513,10 @@ class WallpaperManager:
         try:
             cls.kill_existing()
 
-            # mpvpaper: '*' seleciona todos os monitores
-            # Usar shell=True para garantir que o '*' seja interpretado corretamente
+            # mpvpaper: usando monitor da config
             escaped_path = video_path.replace("'", "'\\''")
-            shell_cmd = f"mpvpaper -o 'loop --vf=fps={fps} --speed={speed}' '*' '{escaped_path}'"
+            monitor_arg = f"'{monitor}'" if monitor else "'*'"
+            shell_cmd = f"mpvpaper -o 'loop --vf=fps={fps} --speed={speed}' {monitor_arg} '{escaped_path}'"
 
             subprocess.Popen(
                 shell_cmd,
@@ -384,7 +525,7 @@ class WallpaperManager:
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
             )
-            logging.info("Wallpaper aplicado: %s (FPS: %d, Speed: %sx)", video_path, fps, speed)
+            logging.info("Wallpaper aplicado: %s (Mon: %s, FPS: %d, Speed: %sx)", video_path, monitor, fps, speed)
             return True
 
         except Exception as e:
@@ -589,6 +730,11 @@ class WalpopApp(ctk.CTk):
         self._build_ui()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
+        # Trays e Backgrounds
+        SystemTray.run(self)
+        SmartPauseManager.start(self.config)
+        ShuffleManager.start(self.config, self)
+
         # Carregar wallpapers na inicialização
         self.after(300, self._refresh_list)
 
@@ -596,7 +742,7 @@ class WalpopApp(ctk.CTk):
 
     def _build_ui(self):
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(2, weight=1)  # row 2 = lista scrollable
+        self.grid_rowconfigure(3, weight=1)  # row 3 = lista scrollable
 
         # ── Header ────────────────────────────────────────────────────────
         header = ctk.CTkFrame(self, fg_color="transparent")
@@ -661,9 +807,17 @@ class WalpopApp(ctk.CTk):
             command=self._browse_custom_folder,
         ).grid(row=0, column=2, padx=(6, 0))
 
+        # ── Barra de busca e favoritos ────────────────────────────────────
+        search_frame = ctk.CTkFrame(self, fg_color="transparent")
+        search_frame.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 4))
+        search_frame.grid_columnconfigure(0, weight=1)
+        self.search_entry = ctk.CTkEntry(search_frame, placeholder_text="🔍 Buscar wallpaper...")
+        self.search_entry.grid(row=0, column=0, sticky="ew")
+        self.search_entry.bind("<KeyRelease>", lambda e: self._filter_and_render_list())
+
         # ── Lista de wallpapers (scrollable) ────────────────────────────
         self.list_frame = ctk.CTkScrollableFrame(self, label_text="Wallpapers")
-        self.list_frame.grid(row=2, column=0, sticky="nsew", padx=16, pady=(6, 6))
+        self.list_frame.grid(row=3, column=0, sticky="nsew", padx=16, pady=(6, 6))
         self.list_frame.grid_columnconfigure(1, weight=1)
 
         self.empty_label = ctk.CTkLabel(
@@ -675,7 +829,7 @@ class WalpopApp(ctk.CTk):
 
         # ── Barra de progresso (otimização) ──────────────────────────────
         self.progress_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.progress_frame.grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 2))
+        self.progress_frame.grid(row=4, column=0, sticky="ew", padx=16, pady=(0, 2))
         self.progress_frame.grid_columnconfigure(0, weight=1)
 
         self.progress_label = ctk.CTkLabel(
@@ -690,7 +844,7 @@ class WalpopApp(ctk.CTk):
 
         # ── Controles inferiores ─────────────────────────────────────────
         controls = ctk.CTkFrame(self, fg_color="transparent")
-        controls.grid(row=4, column=0, sticky="ew", padx=16, pady=(4, 12))
+        controls.grid(row=5, column=0, sticky="ew", padx=16, pady=(4, 12))
         controls.grid_columnconfigure(1, weight=1)
 
         # FPS slider
@@ -708,7 +862,6 @@ class WalpopApp(ctk.CTk):
         )
         self.fps_slider.grid(row=0, column=1, sticky="ew")
 
-        # Posicionar slider no valor salvo
         saved_fps = self.config.get("fps", 30)
         idx = FPS_VALUES.index(saved_fps) if saved_fps in FPS_VALUES else 3
         self.fps_slider.set(idx)
@@ -718,13 +871,6 @@ class WalpopApp(ctk.CTk):
             font=ctk.CTkFont(size=13, weight="bold"), width=60,
         )
         self.fps_label.grid(row=0, column=2, padx=(8, 0))
-
-        ctk.CTkLabel(
-            fps_frame,
-            text="FPS menor = menos consumo de CPU",
-            font=ctk.CTkFont(size=10),
-            text_color="gray",
-        ).grid(row=1, column=0, columnspan=3, sticky="w")
 
         # Speed slider
         speed_frame = ctk.CTkFrame(controls, fg_color="transparent")
@@ -751,29 +897,60 @@ class WalpopApp(ctk.CTk):
         )
         self.speed_label.grid(row=0, column=2, padx=(8, 0))
 
-        # Autostart toggle — sincronizar com estado real
+        # Monitor Input
+        mon_frame = ctk.CTkFrame(controls, fg_color="transparent")
+        mon_frame.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(0, 6))
+        mon_frame.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(mon_frame, text="Monitor:", font=ctk.CTkFont(size=13)).grid(row=0, column=0, sticky="w", padx=(0, 8))
+        self.monitor_entry = ctk.CTkEntry(mon_frame, placeholder_text="* (Todos) ou eDP-1")
+        self.monitor_entry.grid(row=0, column=1, sticky="ew")
+        self.monitor_entry.insert(0, self.config.get("monitor", "*"))
+        self.monitor_entry.bind("<KeyRelease>", lambda e: self.config.set("monitor", self.monitor_entry.get().strip() or "*"))
+
+        # Shuffle Control
+        shuf_frame = ctk.CTkFrame(controls, fg_color="transparent")
+        shuf_frame.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(0, 6))
+        shuf_frame.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(shuf_frame, text="Trocar Auto:", font=ctk.CTkFont(size=13)).grid(row=0, column=0, sticky="w", padx=(0, 8))
+        self.shuffle_combo = ctk.CTkComboBox(shuf_frame, values=list(SHUFFLE_VALUES.keys()), command=self._on_shuffle_change)
+        self.shuffle_combo.grid(row=0, column=1, sticky="ew")
+        saved_shuf = self.config.get("shuffle_interval", 0)
+        shuf_key = "Desativado"
+        for k, v in SHUFFLE_VALUES.items():
+            if v == saved_shuf:
+                shuf_key = k
+                break
+        self.shuffle_combo.set(shuf_key)
+
+        # Switches (Row 4)
+        sw_frame = ctk.CTkFrame(controls, fg_color="transparent")
+        sw_frame.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(4, 0))
+
+        # Autostart toggle
         actual_autostart = AutostartManager.is_enabled()
         if actual_autostart != self.config.get("autostart", False):
             self.config.set("autostart", actual_autostart)
 
         self.autostart_var = ctk.BooleanVar(value=actual_autostart)
         self.autostart_switch = ctk.CTkSwitch(
-            controls,
-            text="Iniciar com o sistema",
-            variable=self.autostart_var,
-            command=self._on_autostart_toggle,
-            font=ctk.CTkFont(size=13),
+            sw_frame, text="Boot", variable=self.autostart_var,
+            command=self._on_autostart_toggle, font=ctk.CTkFont(size=13)
         )
-        self.autostart_switch.grid(row=2, column=0, sticky="w", pady=(4, 0))
+        self.autostart_switch.pack(side="left")
+
+        # Smart Pause
+        self.smart_pause_var = ctk.BooleanVar(value=self.config.get("smart_pause_battery", False))
+        self.smart_pause_switch = ctk.CTkSwitch(
+            sw_frame, text="Pausar na Bateria", variable=self.smart_pause_var,
+            command=self._on_smart_pause_toggle, font=ctk.CTkFont(size=13)
+        )
+        self.smart_pause_switch.pack(side="left", padx=(16, 0))
 
         # Botão atualizar
         self.refresh_btn = ctk.CTkButton(
-            controls,
-            text="🔄 Atualizar lista",
-            command=self._refresh_list,
-            width=140,
+            sw_frame, text="🔄 Atualizar lista", command=self._refresh_list, width=120
         )
-        self.refresh_btn.grid(row=2, column=2, sticky="e", pady=(4, 0))
+        self.refresh_btn.pack(side="right")
 
         # Status bar
         self.status_label = ctk.CTkLabel(
@@ -822,6 +999,25 @@ class WalpopApp(ctk.CTk):
             AutostartManager.disable()
             self._set_status("Autostart desativado")
 
+    def _on_shuffle_change(self, value):
+        val = SHUFFLE_VALUES.get(value, 0)
+        self.config.set("shuffle_interval", val)
+        ShuffleManager.start(self.config, self)
+
+    def _on_smart_pause_toggle(self):
+        enabled = self.smart_pause_var.get()
+        self.config.set("smart_pause_battery", enabled)
+        SmartPauseManager.start(self.config)
+
+    def _toggle_favorite(self, wp):
+        favs = self.config.get("favorites", [])
+        if wp.file_path in favs:
+            favs.remove(wp.file_path)
+        else:
+            favs.append(wp.file_path)
+        self.config.set("favorites", favs)
+        self._filter_and_render_list()
+
     def _set_status(self, text):
         self.status_label.configure(text=text)
 
@@ -852,26 +1048,8 @@ class WalpopApp(ctk.CTk):
         """Callback na main thread após scan terminar."""
         self._is_scanning = False
         self.refresh_btn.configure(state="normal")
-
-        # Limpar lista
-        for child in self.list_frame.winfo_children():
-            if child != self.empty_label:
-                child.destroy()
-        self.thumb_refs.clear()
-
         self.wallpapers = wallpapers
-
-        if not self.wallpapers:
-            self.empty_label.grid(row=0, column=0, columnspan=4, pady=40)
-            self._set_status("Nenhum wallpaper encontrado")
-            return
-
-        self.empty_label.grid_remove()
-
-        for i, wp in enumerate(self.wallpapers):
-            self._add_wallpaper_row(i, wp)
-
-        self._set_status(f"{len(self.wallpapers)} wallpapers encontrados")
+        self._filter_and_render_list()
 
         # Gerar thumbnails faltantes em background e recarregar depois
         missing = [wp for wp in self.wallpapers
@@ -880,23 +1058,42 @@ class WalpopApp(ctk.CTk):
             def _on_thumbs_done(count):
                 if count > 0:
                     self.after(0, self._reload_thumbnails)
-
             ThumbnailCache.generate_missing_async(missing, _on_thumbs_done)
+
+    def _filter_and_render_list(self):
+        query = self.search_entry.get().lower()
+        favs = self.config.get("favorites", [])
+
+        filtered = []
+        for wp in self.wallpapers:
+            if query in wp.title.lower() or query in wp.source.lower():
+                filtered.append(wp)
+
+        filtered.sort(key=lambda w: (0 if w.file_path in favs else 1, w.title.lower()))
+
+        for child in self.list_frame.winfo_children():
+            if child != self.empty_label:
+                child.destroy()
+        self.thumb_refs.clear()
+
+        if not filtered:
+            self.empty_label.grid(row=0, column=0, columnspan=4, pady=40)
+            self._set_status("Nenhum wallpaper encontrado")
+            return
+
+        self.empty_label.grid_remove()
+
+        for i, wp in enumerate(filtered):
+            self._add_wallpaper_row(i, wp)
+
+        self._set_status(f"{len(filtered)} wallpapers encontrados")
 
     def _reload_thumbnails(self):
         """Recarrega a lista após geração de thumbnails em background."""
         if not self._is_scanning:
             self._set_status("Atualizando thumbnails...")
             # Recarregar sem re-escanear
-            for child in self.list_frame.winfo_children():
-                if child != self.empty_label:
-                    child.destroy()
-            self.thumb_refs.clear()
-
-            for i, wp in enumerate(self.wallpapers):
-                self._add_wallpaper_row(i, wp)
-
-            self._set_status(f"{len(self.wallpapers)} wallpapers encontrados")
+            self._filter_and_render_list()
 
     def _add_wallpaper_row(self, row_idx, wp):
         """Adiciona uma linha na lista para um wallpaper."""
@@ -936,6 +1133,15 @@ class WalpopApp(ctk.CTk):
         # Botões
         btn_frame = ctk.CTkFrame(row_frame, fg_color="transparent")
         btn_frame.grid(row=0, column=2, rowspan=2, padx=(4, 8), pady=6)
+
+        is_fav = wp.file_path in self.config.get("favorites", [])
+        fav_text = "⭐" if is_fav else "☆"
+        fav_btn = ctk.CTkButton(
+            btn_frame, text=fav_text, width=32, height=28,
+            fg_color="transparent", hover_color="#2d3748", text_color="#ecc94b",
+            command=lambda w=wp: self._toggle_favorite(w),
+        )
+        fav_btn.pack(side="left", padx=(0, 6))
 
         apply_text = "✓ Ativo" if is_active else "Aplicar"
         apply_color = "#38a169" if is_active else "#4299e1"
@@ -990,13 +1196,16 @@ class WalpopApp(ctk.CTk):
 
     # ── Aplicar wallpaper ────────────────────────────────────────────────
 
-    def _apply_wallpaper(self, wp):
+    def _apply_wallpaper(self, wp, is_shuffle=False):
         fps = self._get_current_fps()
         speed = self._get_current_speed()
-        self._set_status(f"Aplicando: {wp.title}...")
+        mon = self.config.get("monitor", "*")
+        
+        mode_text = "[Shuffle] " if is_shuffle else ""
+        self._set_status(f"Aplicando: {mode_text}{wp.title}...")
         self.update()
 
-        success = WallpaperManager.apply(wp.file_path, fps, speed)
+        success = WallpaperManager.apply(wp.file_path, fps, speed, monitor=mon)
         if success:
             self.config.set("last_wallpaper", wp.file_path)
             self._set_status(f"✅ Aplicado: {wp.title} ({fps} fps, {speed}x)")
@@ -1070,8 +1279,17 @@ class WalpopApp(ctk.CTk):
     # ── Fechar ───────────────────────────────────────────────────────────
 
     def _on_close(self):
-        """Fecha a UI sem matar o mpvpaper (wallpaper continua rodando)."""
+        """Oculta a UI sem matar o mpvpaper. Fica na bandeja."""
+        self.withdraw()
+
+    def _on_close_full(self):
+        """Fecha totalmente o aplicativo."""
+        WallpaperManager.kill_existing()
+        SystemTray.stop()
+        SmartPauseManager.stop()
+        ShuffleManager.stop()
         self.destroy()
+        sys.exit(0)
 
 # ─── Modo Autostart ──────────────────────────────────────────────────────────
 
