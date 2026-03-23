@@ -15,8 +15,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ── 1. Dependências do sistema ──────────────
 echo "📦 Instalando dependências do sistema..."
-sudo apt update -qq
-sudo apt install -y mpv mpvpaper ffmpeg python3-pip python3-venv
+sudo apt install -y mpv ffmpeg python3-pip python3-venv
 
 # ── 2. Ambiente virtual Python ──────────────
 echo ""
