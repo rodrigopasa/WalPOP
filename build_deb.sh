@@ -26,6 +26,13 @@ mkdir -p "$DEB_NAME/usr/share/icons/hicolor/128x128/apps"
 cp dist/Walpop "$DEB_NAME/usr/bin/walpop"
 chmod +x "$DEB_NAME/usr/bin/walpop"
 
+# Copiar mpvpaper embutido (Zero-deps out-of-the-box!)
+if [ -f "assets/bin/mpvpaper" ]; then
+    echo "⚙️ Embutindo mpvpaper nativo no pacote..."
+    cp assets/bin/mpvpaper "$DEB_NAME/usr/bin/mpvpaper"
+    chmod +x "$DEB_NAME/usr/bin/mpvpaper"
+fi
+
 # Se houver ícone:
 if [ -f "assets/icon.png" ]; then
     cp assets/icon.png "$DEB_NAME/usr/share/icons/hicolor/128x128/apps/walpop.png"
@@ -58,13 +65,11 @@ Version: 2.0
 Section: utils
 Priority: optional
 Architecture: amd64
-Depends: ffmpeg, gir1.2-appindicator3-0.1
-Recommends: mpvpaper
+Depends: ffmpeg, gir1.2-appindicator3-0.1, libmpv2, libwayland-client0, libegl1, libgles2
 Maintainer: Rodrigo Pasa <seu.email@example.com>
 Description: Gerenciador de Wallpapers Animados para Pop!_OS
  Aplicativo feito em Python e customtkinter.
- Instala automaticamente as dependências do mpvpaper e ffmpeg.
- Permite controlar velocidade, fps e autostart.
+ Vem com o 'mpvpaper' nativamente embutido no pacote!
 EOF
 
 # Construir pacote .deb

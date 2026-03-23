@@ -41,24 +41,8 @@ Walpop scans your **Steam Workshop** wallpapers and any **custom folder** you ch
 - **Pop!_OS 24.04** with Wayland / COSMIC
 - **Python 3.10+**
 - **ffmpeg** — generates thumbnails and optimizes videos
-- **mpvpaper** — renders the animated wallpaper on the desktop
 
-### ⚠️ Installing `mpvpaper` (Crucial Step)
-`mpvpaper` is **not** available in the official Ubuntu/Pop!_OS repositories. You must install it manually before Walpop can draw wallpapers.
-You can compile it directly from the [GhostNaN/mpvpaper repository](https://github.com/GhostNaN/mpvpaper):
-
-```bash
-# 1. Install build dependencies
-sudo apt update
-sudo apt install -y meson ninja-build libwlroots-dev wayland-protocols libegl-dev libwayland-dev libgles2-dev libmpv-dev git
-
-# 2. Clone and build
-git clone https://github.com/GhostNaN/mpvpaper.git
-cd mpvpaper
-meson setup build
-ninja -C build
-sudo ninja -C build install
-```
+*(Note: **mpvpaper** is officially bundled natively inside the Debian package and does not need to be installed manually!)*
 
 ---
 
