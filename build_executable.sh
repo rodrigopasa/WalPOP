@@ -8,11 +8,13 @@ set -e
 
 echo "📦 Preparando para compilar o Walpop..."
 
-# Se existir o venv, ativá-lo para usar as mesmas libs
-if [ -d "venv" ]; then
-    echo "🐍 Ativando ambiente virtual..."
-    source venv/bin/activate
+# Garantir ambiente virtual (resolve erro de PEP 668 de Pythons novos no Ubuntu/Pop)
+if [ ! -d "venv" ]; then
+    echo "🐍 Criando ambiente virtual..."
+    python3 -m venv venv
 fi
+echo "🐍 Ativando ambiente virtual..."
+source venv/bin/activate
 
 # Instalar o PyInstaller e dependências
 echo "📥 Instalando dependências e bibliotecas Python..."
