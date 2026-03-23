@@ -20,6 +20,7 @@ Walpop scans your **Steam Workshop** wallpapers and any **custom folder** you ch
 | 📋 **Unified List** | All wallpapers displayed in a single scrollable list with thumbnails and `[Steam]` / `[Custom]` tags |
 | 🖼️ **Thumbnail Cache** | Auto-generates thumbnails via `ffmpeg` and caches them in `~/.config/walpop/thumbs/` |
 | 🎯 **FPS Control** | Slider with discrete values (10 / 15 / 24 / 30 / 60) — lower FPS = lower CPU usage |
+| ⏩ **Speed Control** | Slider to control the playback speed (0.25x to 2.0x) |
 | ⚡ **Video Optimization** | One-click optimization via `ffmpeg` — scales to 720p, removes audio, compresses with CRF 28 |
 | 🚀 **Autostart** | Toggle to launch Walpop on boot and automatically apply the last used wallpaper (no UI) |
 | 💾 **Persistent Config** | All settings saved to `~/.config/walpop/config.json` — survives restarts |
@@ -39,9 +40,25 @@ Walpop scans your **Steam Workshop** wallpapers and any **custom folder** you ch
 
 ## 🚀 Installation
 
+### Option 1: Native DEB Package (Recommended)
+You can build a native Debian package that will automatically install all dependencies (`mpvpaper`, `ffmpeg`, etc.) and the application globally:
 ```bash
 git clone https://github.com/rodrigopasa/WalPOP.git
 cd WalPOP
+bash build_deb.sh
+sudo apt install ./walpop_2.0_amd64.deb
+```
+
+### Option 2: Standalone Executable
+If you just want a single executable without installing globally:
+```bash
+bash build_executable.sh 
+# The executable will be available in dist/Walpop
+./dist/Walpop
+```
+
+### Option 3: Local script installation
+```bash
 chmod +x install.sh
 bash install.sh
 ```
@@ -93,6 +110,8 @@ python3 walpop.py --autostart
 WalPOP/
 ├── walpop.py              # Main application (UI + logic)
 ├── requirements.txt       # Python dependencies
+├── build_deb.sh           # Script to build native .deb package
+├── build_executable.sh    # Script to build standalone PyInstaller executable
 ├── install.sh             # One-command installer
 ├── walpop.desktop         # Desktop entry template
 └── assets/
@@ -117,6 +136,7 @@ The config file (`~/.config/walpop/config.json`) is managed automatically:
 ```json
 {
   "fps": 30,
+  "speed": 1.0,
   "custom_folder": "/home/user/Wallpapers",
   "last_wallpaper": "/path/to/video.mp4",
   "autostart": false

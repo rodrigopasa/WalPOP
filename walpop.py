@@ -36,9 +36,11 @@ STEAM_WORKSHOP_PATHS = [
 
 VIDEO_EXTENSIONS = {".mp4", ".webm", ".mkv"}
 FPS_VALUES = [10, 15, 24, 30, 60]
+SPEED_VALUES = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
 
 DEFAULT_CONFIG = {
     "fps": 30,
+    "speed": 1.0,
     "custom_folder": "",
     "last_wallpaper": "",
     "autostart": False,
@@ -75,9 +77,16 @@ def truncate_text(text, max_length=40):
     return text
 
 
+def get_executable_path():
+    """Retorna o caminho do executável (se compilado) ou do script atual."""
+    if getattr(sys, 'frozen', False):
+        return sys.executable
+    return os.path.abspath(__file__)
+
+
 def get_script_dir():
-    """Retorna o diretório do script walpop.py."""
-    return os.path.dirname(os.path.abspath(__file__))
+    """Retorna o diretório do script ou do executável."""
+    return os.path.dirname(get_executable_path())
 
 
 def get_venv_python():
@@ -350,7 +359,7 @@ class WallpaperManager:
             logging.warning("Erro ao matar mpvpaper: %s", e)
 
     @classmethod
-    def apply(cls, video_path, fps=30):
+    def apply(cls, video_path, fps=30, speed=1.0):
         """Mata mpvpaper anterior e aplica novo wallpaper."""
         if not cls.HAS_MPVPAPER:
             logging.error("mpvpaper não está instalado.")
@@ -366,7 +375,7 @@ class WallpaperManager:
             # mpvpaper: '*' seleciona todos os monitores
             # Usar shell=True para garantir que o '*' seja interpretado corretamente
             escaped_path = video_path.replace("'", "'\\''")
-            shell_cmd = f"mpvpaper -o 'loop --vf=fps={fps}' '*' '{escaped_path}'"
+            shell_cmd = f"mpvpaper -o 'loop --vf=fps={fps} --speed={speed}' '*' '{escaped_path}'"
 
             subprocess.Popen(
                 shell_cmd,
@@ -375,7 +384,7 @@ class WallpaperManager:
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
             )
-            logging.info("Wallpaper aplicado: %s (FPS: %d)", video_path, fps)
+            logging.info("Wallpaper aplicado: %s (FPS: %d, Speed: %sx)", video_path, fps, speed)
             return True
 
         except Exception as e:
@@ -511,14 +520,20 @@ class AutostartManager:
 
     @staticmethod
     def enable():
-        """Cria arquivo de autostart usando o python do venv se disponível."""
+        """Cria arquivo de autostart apontando para o binário ou script python."""
         os.makedirs(AUTOSTART_DIR, exist_ok=True)
-        script_path = os.path.abspath(__file__)
-        python_path = get_venv_python()
+        
+        exec_path = get_executable_path()
+        if getattr(sys, 'frozen', False):
+            exec_line = f"Exec={exec_path} --autostart"
+        else:
+            python_path = get_venv_python()
+            exec_line = f"Exec={python_path} {exec_path} --autostart"
+
         content = f"""[Desktop Entry]
 Type=Application
 Name=Walpop
-Exec={python_path} {script_path} --autostart
+{exec_line}
 Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
@@ -711,6 +726,31 @@ class WalpopApp(ctk.CTk):
             text_color="gray",
         ).grid(row=1, column=0, columnspan=3, sticky="w")
 
+        # Speed slider
+        speed_frame = ctk.CTkFrame(controls, fg_color="transparent")
+        speed_frame.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(0, 6))
+        speed_frame.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(speed_frame, text="Velocidade:", font=ctk.CTkFont(size=13)).grid(
+            row=0, column=0, sticky="w", padx=(0, 8)
+        )
+
+        self.speed_slider = ctk.CTkSlider(
+            speed_frame, from_=0, to=len(SPEED_VALUES)-1, number_of_steps=len(SPEED_VALUES)-1,
+            command=self._on_speed_change,
+        )
+        self.speed_slider.grid(row=0, column=1, sticky="ew")
+
+        saved_speed = self.config.get("speed", 1.0)
+        idx_speed = SPEED_VALUES.index(saved_speed) if saved_speed in SPEED_VALUES else 3
+        self.speed_slider.set(idx_speed)
+
+        self.speed_label = ctk.CTkLabel(
+            speed_frame, text=f"{saved_speed}x",
+            font=ctk.CTkFont(size=13, weight="bold"), width=60,
+        )
+        self.speed_label.grid(row=0, column=2, padx=(8, 0))
+
         # Autostart toggle — sincronizar com estado real
         actual_autostart = AutostartManager.is_enabled()
         if actual_autostart != self.config.get("autostart", False):
@@ -724,7 +764,7 @@ class WalpopApp(ctk.CTk):
             command=self._on_autostart_toggle,
             font=ctk.CTkFont(size=13),
         )
-        self.autostart_switch.grid(row=1, column=0, sticky="w", pady=(4, 0))
+        self.autostart_switch.grid(row=2, column=0, sticky="w", pady=(4, 0))
 
         # Botão atualizar
         self.refresh_btn = ctk.CTkButton(
@@ -733,7 +773,7 @@ class WalpopApp(ctk.CTk):
             command=self._refresh_list,
             width=140,
         )
-        self.refresh_btn.grid(row=1, column=2, sticky="e", pady=(4, 0))
+        self.refresh_btn.grid(row=2, column=2, sticky="e", pady=(4, 0))
 
         # Status bar
         self.status_label = ctk.CTkLabel(
@@ -761,6 +801,16 @@ class WalpopApp(ctk.CTk):
         fps = self._get_current_fps()
         self.fps_label.configure(text=f"{fps} fps")
         self.config.set("fps", fps)
+
+    def _get_current_speed(self):
+        idx = int(round(self.speed_slider.get()))
+        idx = max(0, min(idx, len(SPEED_VALUES) - 1))
+        return SPEED_VALUES[idx]
+
+    def _on_speed_change(self, value):
+        speed = self._get_current_speed()
+        self.speed_label.configure(text=f"{speed}x")
+        self.config.set("speed", speed)
 
     def _on_autostart_toggle(self):
         enabled = self.autostart_var.get()
@@ -942,13 +992,14 @@ class WalpopApp(ctk.CTk):
 
     def _apply_wallpaper(self, wp):
         fps = self._get_current_fps()
+        speed = self._get_current_speed()
         self._set_status(f"Aplicando: {wp.title}...")
         self.update()
 
-        success = WallpaperManager.apply(wp.file_path, fps)
+        success = WallpaperManager.apply(wp.file_path, fps, speed)
         if success:
             self.config.set("last_wallpaper", wp.file_path)
-            self._set_status(f"✅ Aplicado: {wp.title} ({fps} fps)")
+            self._set_status(f"✅ Aplicado: {wp.title} ({fps} fps, {speed}x)")
             # Recarregar lista para atualizar indicador de ativo
             self._reload_thumbnails()
         else:
@@ -1028,6 +1079,7 @@ def run_autostart(config):
     """Aplica o último wallpaper salvo e sai (sem UI)."""
     last_wp = config.get("last_wallpaper", "")
     fps = config.get("fps", 30)
+    speed = config.get("speed", 1.0)
 
     if not last_wp:
         logging.info("Autostart: nenhum wallpaper configurado.")
@@ -1040,8 +1092,8 @@ def run_autostart(config):
     # Esperar um pouco o compositor Wayland estar pronto
     time.sleep(2)
 
-    logging.info("Autostart: aplicando %s (%d fps)", last_wp, fps)
-    success = WallpaperManager.apply(last_wp, fps)
+    logging.info("Autostart: aplicando %s (%d fps, %sx)", last_wp, fps, speed)
+    success = WallpaperManager.apply(last_wp, fps, speed)
     if success:
         logging.info("Autostart: wallpaper aplicado com sucesso.")
     else:
