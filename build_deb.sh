@@ -58,7 +58,7 @@ Version: 2.0
 Section: utils
 Priority: optional
 Architecture: amd64
-Depends: mpvpaper, ffmpeg
+Depends: mpvpaper, ffmpeg, gir1.2-appindicator3-0.1
 Maintainer: Rodrigo Pasa <seu.email@example.com>
 Description: Gerenciador de Wallpapers Animados para Pop!_OS
  Aplicativo feito em Python e customtkinter.
