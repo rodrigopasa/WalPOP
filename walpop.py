@@ -769,7 +769,7 @@ class WalpopApp(ctk.CTk):
         if not self.has_mpvpaper:
             warn = ctk.CTkLabel(
                 self,
-                text="⚠️  mpvpaper não encontrado! Instale com: sudo apt install mpvpaper",
+                text="⚠️  mpvpaper não encontrado! Reinstale o Walpop para recuperar o binário embutido.",
                 text_color="#ff6b6b",
                 font=ctk.CTkFont(size=12),
             )
@@ -1215,8 +1215,8 @@ class WalpopApp(ctk.CTk):
             if not self.has_mpvpaper:
                 messagebox.showerror(
                     "mpvpaper não encontrado",
-                    "O mpvpaper não está instalado.\n\n"
-                    "Instale com:\n  sudo apt install mpvpaper",
+                    "O mpvpaper não está instalado ou não está no PATH.\n\n"
+                    "Reinstale o Walpop para recuperar o binário embutido.",
                 )
             else:
                 messagebox.showerror("Erro", "Falha ao aplicar wallpaper. Verifique o log.")

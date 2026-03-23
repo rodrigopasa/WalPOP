@@ -24,6 +24,20 @@ Thumbs.db
 icons/downloaded_*
 *.desktop.backup
 
+# Build artifacts
+dist/
+build/
+*.spec
+walpop_win_temp*
+requirements_win_temp.txt
+build_executable.ps1
+
+# mpvpaper source clone (compiled binary in assets/bin is tracked)
+mpvpaper/
+
+# DEB staging folder (output .deb file is kept)
+walpop_2.0_amd64/
+
 # Logs and temp files
 *.log
 *.tmp
