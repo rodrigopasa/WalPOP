@@ -36,8 +36,6 @@ Walpop scans your **Steam Workshop** wallpapers and any **custom folder** you ch
 
 ## 📋 Requirements
 
-## 📋 Requirements
-
 - **Pop!_OS 24.04** with Wayland / COSMIC
 - **Python 3.10+**
 - **ffmpeg** — generates thumbnails and optimizes videos
@@ -72,9 +70,11 @@ bash install.sh
 ```
 
 The install script will:
-1. Install system dependencies (`mpv`, `mpvpaper`, `ffmpeg`, `python3-pip`, `python3-venv`)
-2. Create a Python virtual environment and install `customtkinter` + `Pillow`
+1. Install system dependencies (`mpv`, `ffmpeg`, `python3-pip`, `python3-venv`)
+2. Create a Python virtual environment and install `customtkinter`, `Pillow`, `pystray` + `psutil`
 3. Add a **Walpop** shortcut to your applications menu
+
+> **Note:** The `.deb` package (Option 1) already bundles `mpvpaper` — for script install (Option 3), install it manually first.
 
 ---
 
@@ -123,7 +123,9 @@ WalPOP/
 ├── install.sh             # One-command installer
 ├── walpop.desktop         # Desktop entry template
 └── assets/
-    └── icon.png           # Application icon
+    ├── icon.png           # Application icon
+    └── bin/
+        └── mpvpaper       # Pre-compiled Wayland renderer (bundled in .deb)
 ```
 
 ### Config files (created at runtime)
@@ -145,9 +147,13 @@ The config file (`~/.config/walpop/config.json`) is managed automatically:
 {
   "fps": 30,
   "speed": 1.0,
+  "monitor": "*",
   "custom_folder": "/home/user/Wallpapers",
   "last_wallpaper": "/path/to/video.mp4",
-  "autostart": false
+  "autostart": false,
+  "favorites": [],
+  "shuffle_interval": 0,
+  "smart_pause_battery": false
 }
 ```
 
@@ -173,7 +179,7 @@ For each subfolder, it reads `project.json` and:
 
 | Problem | Solution |
 |---|---|
-| **"mpvpaper não encontrado"** | `sudo apt install mpvpaper` |
+| **"mpvpaper não encontrado"** | Reinstall the Walpop `.deb` to recover the bundled binary |
 | **"ffmpeg não encontrado"** | `sudo apt install ffmpeg` |
 | **No wallpapers found** | Make sure Steam is installed with Wallpaper Engine subscriptions, or set a custom folder |
 | **Wallpaper not applying** | Verify you're on a Wayland session: `echo $XDG_SESSION_TYPE` |

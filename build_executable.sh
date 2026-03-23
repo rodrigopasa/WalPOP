@@ -8,9 +8,10 @@ set -e
 
 echo "📦 Preparando para compilar o Walpop..."
 
-# Garantir ambiente virtual (resolve erro de PEP 668 de Pythons novos no Ubuntu/Pop)
-if [ ! -d "venv" ]; then
-    echo "🐍 Criando ambiente virtual..."
+# Garantir ambiente virtual (resolve erro de PEP 668 e problemas de WSL x Windows venv)
+if [ ! -f "venv/bin/activate" ]; then
+    echo "🐍 Criando ambiente virtual limpo..."
+    rm -rf venv
     python3 -m venv venv
 fi
 echo "🐍 Ativando ambiente virtual..."
